@@ -1,56 +1,76 @@
+import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { jobTitle, industry, seniority, description, tasks } = body;
 
-    if (!process.env.GOOGLE_API_KEY) {
-      return Response.json(
-        { error: "Missing GOOGLE_API_KEY in environment variables." },
-        { status: 500 }
+    const {
+      jobTitle,
+      industry,
+      seniority,
+      description,
+      tasks
+    } = body;
+
+    if (!description) {
+      return NextResponse.json(
+        { error: "Job description is required." },
+        { status: 400 }
       );
     }
 
     const ai = new GoogleGenAI({
-      apiKey: process.env.GOOGLE_API_KEY,
+      apiKey: process.env.GOOGLE_API_KEY
     });
 
     const prompt = `
-You are an AI displacement risk analyst.
+You are an AI labor displacement risk analyst.
 
-Analyze this job and provide:
+Analyze the following job and estimate AI automation risk.
 
-1. AI automation risk score (0-100%)
-2. Why it is vulnerable or protected
-3. Most automatable tasks
-4. Hardest tasks to automate
-5. 5-year outlook
+Return:
+1. Risk Score (0–100%)
+2. Explanation (concise but detailed)
+3. Which tasks are most automatable
+4. Which tasks are hardest to automate
 
-Job Title: ${jobTitle}
-Industry: ${industry}
-Seniority: ${seniority}
+Job Title: ${jobTitle || "N/A"}
+Industry: ${industry || "N/A"}
+Seniority: ${seniority || "N/A"}
 
-Description:
+Job Description:
 ${description}
 
-Tasks:
-${tasks?.join(", ")}
+Primary Tasks:
+${tasks?.join(", ") || "Not provided"}
 `;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.0-flash",
       contents: prompt,
+      config: {
+        temperature: 0.7,
+        maxOutputTokens: 700
+      }
     });
 
-    return Response.json({
-      result: response.text,
+    return NextResponse.json({
+      result: response.text
     });
 
   } catch (error) {
-    console.error("GENAI ERROR:", error);
-    return Response.json(
-      { error: error.message },
+    console.error("AI ERROR:", error);
+
+    if (error.status === 429) {
+      return NextResponse.json(
+        { error: "Rate limit hit. Wait 30–60 seconds and try again." },
+        { status: 429 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: "AI request failed." },
       { status: 500 }
     );
   }
