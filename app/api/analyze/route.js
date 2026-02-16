@@ -12,11 +12,12 @@ export async function POST(req) {
     const prompt = `
 You are an AI displacement risk analyst.
 
-Analyze the following job and provide:
+Analyze this job and provide:
+
 1. AI automation risk score (0-100%)
-2. Why the role is vulnerable or protected
-3. Which tasks are most automatable
-4. Which tasks are hardest to automate
+2. Why it is vulnerable or protected
+3. Most automatable tasks
+4. Hardest tasks to automate
 5. 5-year outlook
 
 Job Title: ${jobTitle}
@@ -31,13 +32,13 @@ ${tasks?.join(", ")}
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
+      model: "gemini-1.0-pro",
       contents: prompt,
     });
 
-    const text = response.text;
-
-    return Response.json({ result: text });
+    return Response.json({
+      result: response.text,
+    });
 
   } catch (error) {
     console.error(error);
