@@ -79,7 +79,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-zinc-50 text-zinc-900">
+    <main className="min-h-screen bg-red-600 text-white p-10">
       {/* Top bar */}
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
