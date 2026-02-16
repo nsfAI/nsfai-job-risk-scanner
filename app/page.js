@@ -20,6 +20,24 @@ const TASKS = [
   "Building software / automation / scripting"
 ];
 
+function Card({ title, children }) {
+  return (
+    <div style={{ padding: 14, border: "1px solid #eee", borderRadius: 14 }}>
+      <div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function KV({ label, value }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f0f0f0" }}>
+      <div>{label}</div>
+      <div style={{ fontWeight: 900 }}>{value}</div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [title, setTitle] = useState("");
   const [industry, setIndustry] = useState("General");
@@ -30,14 +48,12 @@ export default function Home() {
   const [out, setOut] = useState(null);
   const [err, setErr] = useState("");
 
-  const selectedCount = selected.size;
-  const canRun = useMemo(() => jd.trim().length >= 300 && selectedCount >= 3, [jd, selectedCount]);
+  const canRun = useMemo(() => jd.trim().length >= 300 && selected.size >= 3, [jd, selected]);
 
-  function toggle(t) {
+  function toggle(task) {
     setSelected(prev => {
       const next = new Set(prev);
-      if (next.has(t)) next.delete(t);
-      else next.add(t);
+      next.has(task) ? next.delete(task) : next.add(task);
       return next;
     });
   }
@@ -67,7 +83,6 @@ export default function Home() {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Analysis failed.");
-
       setOut(data);
     } catch (e) {
       setErr(e?.message || "Something went wrong.");
@@ -82,7 +97,7 @@ export default function Home() {
     out?.overall_band === "High Risk" ? "#9b1c1c" : "#333";
 
   return (
-    <main style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
+    <main style={{ maxWidth: 1100, margin: "0 auto", padding: 24, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>NSFAI — Not Safe From AI</h1>
         <div style={{ color: "#666" }}>AI displacement risk for any role</div>
@@ -92,7 +107,9 @@ export default function Home() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           <div>
             <div style={{ fontWeight: 800, marginBottom: 6 }}>Job title (optional)</div>
-            <input value={title} onChange={e => setTitle(e.target.value)}
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
               placeholder="e.g., Financial Analyst"
               style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
             />
@@ -100,31 +117,27 @@ export default function Home() {
 
           <div>
             <div style={{ fontWeight: 800, marginBottom: 6 }}>Industry</div>
-            <select value={industry} onChange={e => setIndustry(e.target.value)}
-              style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}>
-              <option>General</option>
-              <option>Finance</option>
-              <option>Healthcare</option>
-              <option>Education</option>
-              <option>Law</option>
-              <option>Construction</option>
-              <option>Retail</option>
-              <option>Tech</option>
-              <option>Manufacturing</option>
-              <option>Government</option>
-              <option>Media / Marketing</option>
+            <select
+              value={industry}
+              onChange={e => setIndustry(e.target.value)}
+              style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
+            >
+              {["General","Finance","Healthcare","Education","Law","Construction","Retail","Tech","Manufacturing","Government","Media / Marketing"].map(x => (
+                <option key={x}>{x}</option>
+              ))}
             </select>
           </div>
 
           <div>
             <div style={{ fontWeight: 800, marginBottom: 6 }}>Seniority</div>
-            <select value={seniority} onChange={e => setSeniority(e.target.value)}
-              style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}>
-              <option>Entry / New Grad</option>
-              <option>Mid-level</option>
-              <option>Senior / Lead</option>
-              <option>Manager</option>
-              <option>Executive</option>
+            <select
+              value={seniority}
+              onChange={e => setSeniority(e.target.value)}
+              style={{ width: "100%", padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
+            >
+              {["Entry / New Grad","Mid-level","Senior / Lead","Manager","Executive"].map(x => (
+                <option key={x}>{x}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -132,7 +145,9 @@ export default function Home() {
         <div style={{ height: 12 }} />
 
         <div style={{ fontWeight: 800, marginBottom: 6 }}>Paste job description (required)</div>
-        <textarea value={jd} onChange={e => setJd(e.target.value)}
+        <textarea
+          value={jd}
+          onChange={e => setJd(e.target.value)}
           rows={10}
           placeholder="Paste the job description or your day-to-day responsibilities."
           style={{ width: "100%", padding: 12, borderRadius: 12, border: "1px solid #ddd", resize: "vertical" }}
@@ -141,7 +156,7 @@ export default function Home() {
         <div style={{ height: 14 }} />
 
         <div style={{ fontWeight: 800, marginBottom: 6 }}>
-          Tasks you actually do (pick 3–8) — selected: {selectedCount}
+          Tasks you actually do (pick 3–8) — selected: {selected.size}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -155,7 +170,9 @@ export default function Home() {
 
         <div style={{ height: 14 }} />
 
-        <button onClick={analyze} disabled={loading}
+        <button
+          onClick={analyze}
+          disabled={loading}
           style={{
             padding: "12px 16px",
             borderRadius: 12,
@@ -164,7 +181,8 @@ export default function Home() {
             color: loading ? "#333" : "#fff",
             fontWeight: 900,
             cursor: loading ? "not-allowed" : "pointer"
-          }}>
+          }}
+        >
           {loading ? "Analyzing…" : "Generate NSFAI Report"}
         </button>
 
@@ -174,8 +192,8 @@ export default function Home() {
       {out ? (
         <div style={{ marginTop: 18, padding: 16, border: "1px solid #eee", borderRadius: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 18, fontWeight: 950 }}>Result</div>
-            <div style={{ padding: "6px 10px", borderRadius: 999, background: badgeColor, color: "white", fontWeight: 950 }}>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>Result</div>
+            <div style={{ padding: "6px 10px", borderRadius: 999, background: badgeColor, color: "white", fontWeight: 900 }}>
               {out.overall_band}
             </div>
             <div style={{ color: "#666" }}>
@@ -212,21 +230,13 @@ export default function Home() {
                 {(out.defensible_tasks || []).map((x, i) => <li key={i}>{x}</li>)}
               </ul>
             </Card>
-
-            <Card title="90-day AI-proof plan" full>
-              <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
-                {(out.plan_90_days || []).map((x, i) => <li key={i}>{x}</li>)}
-              </ol>
-            </Card>
-
-            <Card title="Safer adjacent roles" full>
-              <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
-                {(out.adjacent_roles || []).map((x, i) => <li key={i}>{x}</li>)}
-              </ul>
-            </Card>
           </div>
 
           <div style={{ marginTop: 12, color: "#777", fontSize: 12, lineHeight: 1.5 }}>
             This is a probabilistic forecast based on task bundles + likely AI adoption patterns. It’s not a guarantee.
           </div>
         </div>
+      ) : null}
+    </main>
+  );
+}
