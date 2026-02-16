@@ -3,19 +3,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 function stripCodeFences(s) {
   if (!s) return "";
-  // remove ```json ... ``` or ``` ... ```
-  return s
-    .replace(/```json\s*/gi, "")
-    .replace(/```/g, "")
-    .trim();
+  return s.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
 }
 
-// Extract the first top-level JSON object or array from a string.
-// Works even if the model adds extra text before/after.
 function extractFirstJson(text) {
   const s = stripCodeFences(text);
-
-  // Find first { or [
   const startObj = s.indexOf("{");
   const startArr = s.indexOf("[");
   let start = -1;
@@ -25,7 +17,6 @@ function extractFirstJson(text) {
   else if (startArr === -1) start = startObj;
   else start = Math.min(startObj, startArr);
 
-  // Now scan and match brackets/quotes
   let inString = false;
   let escape = false;
   let depthObj = 0;
@@ -53,12 +44,10 @@ function extractFirstJson(text) {
     if (ch === "[") depthArr++;
     if (ch === "]") depthArr--;
 
-    // End condition: we started at { or [ and all depths return to zero
     if (depthObj === 0 && depthArr === 0 && i > start) {
       return s.slice(start, i + 1);
     }
   }
-
   return null;
 }
 
@@ -79,18 +68,17 @@ export async function POST(req) {
       return NextResponse.json({ error: "Select between 3 and 8 tasks." }, { status: 400 });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    // ✅ Accept either env var name (so you can't brick it again)
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Missing GEMINI_API_KEY in environment variables." },
+        { error: "Missing API key. Set GEMINI_API_KEY (recommended) or GOOGLE_API_KEY." },
         { status: 500 }
       );
     }
 
     const prompt = `
-Return ONLY a JSON object (no markdown).
-If you must include anything else, put it INSIDE the JSON as a field.
-
+Return ONLY valid JSON (no markdown, no extra text).
 Output JSON with this exact shape:
 {
   "risk_score": number,
@@ -141,21 +129,20 @@ ${tasks.map((t) => `- ${t}`).join("\n")}
     if (!rawText) {
       return NextResponse.json(
         {
-          error: "Gemini failed to generate a response (model access / key issue).",
+          error: "Gemini failed to generate a response.",
           details: lastErr?.message || String(lastErr),
+          hint:
+            "Common causes: wrong/rotated key, billing not enabled, model not available for this key/project, quota exceeded.",
         },
         { status: 502 }
       );
     }
 
-    // ✅ Try direct parse
     let report = null;
-    const cleaned = stripCodeFences(rawText);
 
     try {
-      report = JSON.parse(cleaned);
+      report = JSON.parse(stripCodeFences(rawText));
     } catch {
-      // ✅ Salvage parse: extract first JSON blob from the response
       const extracted = extractFirstJson(rawText);
       if (extracted) {
         try {
@@ -168,24 +155,12 @@ ${tasks.map((t) => `- ${t}`).join("\n")}
 
     if (!report) {
       return NextResponse.json(
-        {
-          error: "Gemini returned invalid JSON.",
-          usedModel,
-          rawModelText: rawText,
-        },
+        { error: "Gemini returned invalid JSON.", usedModel, rawModelText: rawText },
         { status: 502 }
       );
     }
 
-    return NextResponse.json(
-      {
-        ok: true,
-        usedModel,
-        input: { jobTitle, industry, seniority, tasksCount: tasks.length },
-        report,
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ ok: true, usedModel, report }, { status: 200 });
   } catch (err) {
     return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
   }
