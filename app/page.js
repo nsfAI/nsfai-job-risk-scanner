@@ -9,8 +9,8 @@ export default function Home() {
   const [jobDescription, setJobDescription] = useState("");
   const [tasks, setTasks] = useState([]);
   const [result, setResult] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const taskOptions = [
     "Writing emails, documentation, or reports",
@@ -59,7 +59,7 @@ export default function Home() {
           jobTitle,
           industry,
           seniority,
-          description: jobDescription, // 🔥 IMPORTANT FIX
+          description: jobDescription, // IMPORTANT FIX
           tasks
         })
       });
@@ -79,48 +79,94 @@ export default function Home() {
   };
 
   return (
-    <main style={{ padding: 40, maxWidth: 900, margin: "auto" }}>
-      <h1>NSFAI — Not Safe From AI</h1>
+    <main style={{ maxWidth: 1100, margin: "40px auto", padding: "20px" }}>
+      <h1 style={{ fontSize: "40px", fontWeight: "bold" }}>
+        NSFAI — Not Safe From AI
+      </h1>
 
-      <input
-        placeholder="Job Title"
-        value={jobTitle}
-        onChange={(e) => setJobTitle(e.target.value)}
-        style={{ width: "100%", marginBottom: 10 }}
-      />
+      <div style={{ marginTop: 30 }}>
+        <input
+          placeholder="Job title (optional)"
+          value={jobTitle}
+          onChange={(e) => setJobTitle(e.target.value)}
+          style={{ width: "100%", padding: 10, marginBottom: 15 }}
+        />
 
-      <textarea
-        placeholder="Paste job description"
-        value={jobDescription}
-        onChange={(e) => setJobDescription(e.target.value)}
-        rows={6}
-        style={{ width: "100%", marginBottom: 20 }}
-      />
+        <div style={{ display: "flex", gap: 20, marginBottom: 15 }}>
+          <select
+            value={industry}
+            onChange={(e) => setIndustry(e.target.value)}
+            style={{ flex: 1, padding: 10 }}
+          >
+            <option>Tech</option>
+            <option>Finance</option>
+            <option>Healthcare</option>
+            <option>Legal</option>
+            <option>Education</option>
+            <option>Other</option>
+          </select>
 
-      <h3>Tasks (pick up to 8)</h3>
+          <select
+            value={seniority}
+            onChange={(e) => setSeniority(e.target.value)}
+            style={{ flex: 1, padding: 10 }}
+          >
+            <option>Entry</option>
+            <option>Mid</option>
+            <option>Senior / Lead</option>
+            <option>Executive</option>
+          </select>
+        </div>
 
-      {taskOptions.map((task) => (
-        <div key={task}>
-          <label>
+        <textarea
+          placeholder="Paste job description (required)"
+          value={jobDescription}
+          onChange={(e) => setJobDescription(e.target.value)}
+          rows={6}
+          style={{ width: "100%", padding: 12 }}
+        />
+      </div>
+
+      <h2 style={{ marginTop: 40 }}>Tasks (pick up to 8)</h2>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 12,
+          marginTop: 20
+        }}
+      >
+        {taskOptions.map((task) => (
+          <label
+            key={task}
+            style={{
+              border: "1px solid #ddd",
+              padding: 10,
+              borderRadius: 8
+            }}
+          >
             <input
               type="checkbox"
               checked={tasks.includes(task)}
               onChange={() => toggleTask(task)}
+              style={{ marginRight: 8 }}
             />
             {task}
           </label>
-        </div>
-      ))}
+        ))}
+      </div>
 
       <button
         onClick={handleSubmit}
         disabled={loading}
         style={{
-          marginTop: 20,
-          padding: "10px 20px",
-          background: "black",
+          marginTop: 30,
+          padding: "12px 24px",
+          backgroundColor: "black",
           color: "white",
           border: "none",
+          borderRadius: 6,
           cursor: "pointer"
         }}
       >
@@ -128,7 +174,7 @@ export default function Home() {
       </button>
 
       {error && (
-        <p style={{ color: "red", marginTop: 20 }}>{error}</p>
+        <div style={{ marginTop: 20, color: "red" }}>{error}</div>
       )}
 
       {result && (
