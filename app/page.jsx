@@ -60,11 +60,15 @@ export default function Page() {
   const [error, setError] = useState("");
 
   const chars = jobDescription.length;
-
   const selectedCount = selected.length;
 
   const canGenerate = useMemo(() => {
-    return jobDescription.trim().length > 20 && selectedCount >= 3 && selectedCount <= 8 && !loading;
+    return (
+      jobDescription.trim().length > 20 &&
+      selectedCount >= 3 &&
+      selectedCount <= 8 &&
+      !loading
+    );
   }, [jobDescription, selectedCount, loading]);
 
   function toggleTask(task) {
@@ -129,9 +133,10 @@ export default function Page() {
       <div className="sticky top-0 z-50 border-b border-black/5 bg-white/70 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-black text-white grid place-items-center font-semibold">
+            <div className="grid h-9 w-9 place-items-center rounded-full bg-black font-semibold text-white">
               N
             </div>
+
             <div className="leading-tight">
               <div className="text-sm font-semibold tracking-tight">NSFAI</div>
               <div className="text-xs text-neutral-500">
@@ -141,33 +146,32 @@ export default function Page() {
           </div>
 
           <div className="flex items-center gap-2">
-  <a
-    href="#report"
-    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm shadow-sm hover:bg-neutral-50"
-  >
-    Jump to report
-  </a>
+            <a
+              href="#report"
+              className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm shadow-sm hover:bg-neutral-50"
+            >
+              Jump to report
+            </a>
 
-  <a
-    href="/compression"
-    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm shadow-sm hover:bg-neutral-50"
-  >
-    Compression Index
-  </a>
+            <a
+              href="/compression"
+              className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm shadow-sm hover:bg-neutral-50"
+            >
+              Compression Index
+            </a>
 
-  <button
-    onClick={resetAll}
-    className="rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-black/90"
-  >
-    Reset
-  </button>
-</div>
+            <button
+              onClick={resetAll}
+              className="rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-black/90"
+            >
+              Reset
+            </button>
           </div>
         </div>
       </div>
-      <main className="mx-auto max-w-6xl px-4 py-10">
-  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
+      <main className="mx-auto max-w-6xl px-4 py-10">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* Left: Role inputs */}
           <section className="rounded-2xl border border-black/5 bg-white p-6 shadow-[0_1px_0_rgba(0,0,0,0.04),0_10px_30px_rgba(0,0,0,0.06)]">
             <div className="flex items-start justify-between gap-4">
@@ -267,7 +271,7 @@ export default function Page() {
                       on
                         ? "bg-black text-white shadow-sm"
                         : "border border-black/10 bg-white text-neutral-700 hover:bg-neutral-50",
-                      disabled ? "opacity-40 cursor-not-allowed" : ""
+                      disabled ? "cursor-not-allowed opacity-40" : ""
                     )}
                   >
                     {t}
@@ -283,7 +287,7 @@ export default function Page() {
                 "mt-6 w-full rounded-2xl px-4 py-3 text-sm font-semibold shadow-sm transition",
                 canGenerate
                   ? "bg-black text-white hover:bg-black/90"
-                  : "bg-neutral-200 text-neutral-500 cursor-not-allowed"
+                  : "cursor-not-allowed bg-neutral-200 text-neutral-500"
               )}
             >
               {loading ? "Generating..." : "Generate NSFAI Report"}
@@ -318,8 +322,8 @@ export default function Page() {
           {/* Clear disclaimer */}
           <div className="mt-3 text-sm text-neutral-600">
             <span className="font-medium text-neutral-900">Important:</span>{" "}
-            This score reflects <span className="font-medium">automation exposure of tasks</span>, not
-            full job extinction.
+            This score reflects{" "}
+            <span className="font-medium">automation exposure of tasks</span>, not full job extinction.
           </div>
 
           {error ? (
@@ -368,10 +372,7 @@ export default function Page() {
 
                   <div className="mt-4 space-y-3">
                     {(report.most_automatable || []).map((item, i) => (
-                      <div
-                        key={i}
-                        className="rounded-2xl border border-black/5 bg-neutral-50 p-4"
-                      >
+                      <div key={i} className="rounded-2xl border border-black/5 bg-neutral-50 p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-sm font-medium">{item.task}</div>
                           <span className="rounded-full border border-black/10 bg-white px-2 py-1 text-xs text-neutral-700">
@@ -393,10 +394,7 @@ export default function Page() {
 
                   <div className="mt-4 space-y-3">
                     {(report.most_human_moat || []).map((item, i) => (
-                      <div
-                        key={i}
-                        className="rounded-2xl border border-black/5 bg-white p-4"
-                      >
+                      <div key={i} className="rounded-2xl border border-black/5 bg-white p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-sm font-medium">{item.task}</div>
                           <span className="rounded-full bg-black px-2 py-1 text-xs font-semibold text-white">
