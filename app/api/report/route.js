@@ -1,167 +1,268 @@
-import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+export const runtime = "nodejs";
 
-function stripCodeFences(s) {
-  if (!s) return "";
-  return s.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+/**
+ * NSFAI — Report API
+ * - Calls Gemini (gemini-2.0-flash)
+ * - Forces strict JSON output
+ * - Applies "structural dampeners" to prevent unrealistic high scores for
+ *   physical / liability / empathy-heavy roles
+ */
+
+function bandFromScore(score) {
+  if (score <= 2) return "Extremely resistant";
+  if (score <= 4) return "Low exposure";
+  if (score <= 6) return "Moderate exposure";
+  if (score <= 8) return "High task automation exposure";
+  return "Very high displacement probability";
 }
 
-function extractFirstJson(text) {
-  const s = stripCodeFences(text);
-  const startObj = s.indexOf("{");
-  const startArr = s.indexOf("[");
-  let start = -1;
+function clampInt(n, min, max) {
+  const x = Number.isFinite(n) ? n : 0;
+  return Math.max(min, Math.min(max, Math.round(x)));
+}
 
-  if (startObj === -1 && startArr === -1) return null;
-  if (startObj === -1) start = startArr;
-  else if (startArr === -1) start = startObj;
-  else start = Math.min(startObj, startArr);
+function stripCodeFences(text) {
+  if (!text) return "";
+  return text
+    .replace(/```json\s*/gi, "")
+    .replace(/```/g, "")
+    .trim();
+}
 
-  let inString = false;
-  let escape = false;
-  let depthObj = 0;
-  let depthArr = 0;
+/**
+ * Structural dampener:
+ * If user selects tasks that imply strong "human moat", cap score.
+ *
+ * Example:
+ * - 2+ moat indicators => cap at 6
+ * - 1 moat indicator  => cap at 7
+ */
+function applyStructuralDampener(score, selectedTasks = []) {
+  const moatIndicators = [
+    "Hands-on physical work (field, equipment, lab)",
+    "High-stakes decisions / sign-off / liability responsibility",
+    "Caregiving / high-empathy human interaction",
+  ];
 
-  for (let i = start; i < s.length; i++) {
-    const ch = s[i];
+  const hits = selectedTasks.filter((t) => moatIndicators.includes(t)).length;
 
-    if (escape) {
-      escape = false;
-      continue;
-    }
-    if (ch === "\\") {
-      if (inString) escape = true;
-      continue;
-    }
-    if (ch === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
+  const base = clampInt(score, 0, 10);
 
-    if (ch === "{") depthObj++;
-    if (ch === "}") depthObj--;
-    if (ch === "[") depthArr++;
-    if (ch === "]") depthArr--;
+  if (hits >= 2) return Math.min(base, 6);
+  if (hits === 1) return Math.min(base, 7);
+  return base;
+}
 
-    if (depthObj === 0 && depthArr === 0 && i > start) {
-      return s.slice(start, i + 1);
-    }
+function resilienceFactorsFromTasks(selectedTasks = []) {
+  const factors = [];
+
+  if (selectedTasks.includes("Hands-on physical work (field, equipment, lab)")) {
+    factors.push("Physical unpredictability / real-world environment");
   }
-  return null;
+  if (
+    selectedTasks.includes(
+      "High-stakes decisions / sign-off / liability responsibility"
+    )
+  ) {
+    factors.push("Legal liability / accountability");
+  }
+  if (selectedTasks.includes("Caregiving / high-empathy human interaction")) {
+    factors.push("Empathy / trust / human relationship requirements");
+  }
+
+  return factors;
 }
 
 export async function POST(req) {
   try {
-    const body = await req.json().catch(() => null);
+    const body = await req.json();
 
-    const jobTitle = (body?.jobTitle || "").toString();
-    const industry = (body?.industry || "").toString();
-    const seniority = (body?.seniority || "").toString();
-    const jobDesc = (body?.jobDesc || "").toString();
-    const tasks = Array.isArray(body?.tasks) ? body.tasks : [];
+    const jobTitle = (body?.jobTitle || "").toString().slice(0, 120);
+    const industry = (body?.industry || "").toString().slice(0, 80);
+    const seniority = (body?.seniority || "").toString().slice(0, 80);
+    const jobDescription = (body?.jobDescription || "").toString().slice(0, 8000);
+    const tasks = Array.isArray(body?.tasks) ? body.tasks.slice(0, 12) : [];
 
-    if (!jobDesc.trim()) {
-      return NextResponse.json({ error: "Job description is required." }, { status: 400 });
+    if (!jobDescription.trim()) {
+      return Response.json(
+        { ok: false, error: "Missing job description." },
+        { status: 400 }
+      );
     }
-    if (tasks.length < 3 || tasks.length > 8) {
-      return NextResponse.json({ error: "Select between 3 and 8 tasks." }, { status: 400 });
-    }
 
-    // ✅ Accept either env var name (so you can't brick it again)
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    const apiKey =
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+
     if (!apiKey) {
-      return NextResponse.json(
-        { error: "Missing API key. Set GEMINI_API_KEY (recommended) or GOOGLE_API_KEY." },
+      return Response.json(
+        { ok: false, error: "Missing GEMINI_API_KEY (or GOOGLE_API_KEY) on server." },
         { status: 500 }
       );
     }
 
+    const model = "gemini-2.0-flash";
+
+    // Tell Gemini to ONLY output strict JSON with this schema.
+    // (No prose, no markdown, no code fences.)
     const prompt = `
-Return ONLY valid JSON (no markdown, no extra text).
-Output JSON with this exact shape:
+You are an AI labor-market analyst. Output STRICT JSON ONLY.
+
+Goal:
+Given the role + tasks, estimate AI automation exposure.
+
+IMPORTANT:
+- This is NOT "job extinction certainty".
+- It is "task automation exposure".
+- Scores are 0–10 (integers only).
+
+Return JSON with EXACT keys:
 {
   "risk_score": number,
-  "risk_band": "Low" | "Medium" | "High",
-  "why": [string, string, string],
-  "most_automatable": [{"task": string, "reason": string, "time_horizon": "0-12m"|"1-3y"|"3-5y"}],
-  "most_human_moat": [{"task": string, "reason": string}],
-  "recommendations": [string, string, string, string, string],
-  "assumptions": [string, string]
+  "risk_band": string,
+  "why": string[],
+  "most_automatable": { "task": string, "reason": string, "time_horizon": "0-12m"|"1-3y"|"3-5y"|"5y+" }[],
+  "most_human_moat": { "task": string, "reason": string }[],
+  "recommendations": string[],
+  "assumptions": string[]
 }
 
-Role:
-- jobTitle: ${jobTitle || "(not provided)"}
-- industry: ${industry || "(not provided)"}
-- seniority: ${seniority || "(not provided)"}
+Constraints:
+- risk_score must be an integer 0–10
+- why: 2–5 bullets, plain English
+- most_automatable: 2–4 items
+- most_human_moat: 2–4 items
+- recommendations: 3–6 items
+- assumptions: 1–3 items
 
-Job description:
-${jobDesc}
+Inputs:
+Job title: ${jobTitle || "(none)"}
+Industry: ${industry || "(none)"}
+Seniority: ${seniority || "(none)"}
 
 Selected tasks:
-${tasks.map((t) => `- ${t}`).join("\n")}
+${tasks.length ? tasks.map((t) => `- ${t}`).join("\n") : "(none)"}
+
+Job description:
+${jobDescription}
+
+Now output ONLY the JSON object. No extra text.
 `.trim();
 
-    const genAI = new GoogleGenerativeAI(apiKey);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
+      apiKey
+    )}`;
 
-    const modelOrder = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+    const geminiRes = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 900,
+        },
+      }),
+    });
 
-    let rawText = null;
-    let usedModel = null;
-    let lastErr = null;
+    const raw = await geminiRes.text();
 
-    for (const modelName of modelOrder) {
-      try {
-        const model = genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 1400 },
-        });
-
-        rawText = result?.response?.text?.() ?? null;
-        usedModel = modelName;
-        if (rawText) break;
-      } catch (e) {
-        lastErr = e;
-      }
-    }
-
-    if (!rawText) {
-      return NextResponse.json(
+    if (!geminiRes.ok) {
+      // Bubble up info safely
+      return Response.json(
         {
-          error: "Gemini failed to generate a response.",
-          details: lastErr?.message || String(lastErr),
-          hint:
-            "Common causes: wrong/rotated key, billing not enabled, model not available for this key/project, quota exceeded.",
+          ok: false,
+          error: `Gemini API error (${geminiRes.status})`,
+          details: raw?.slice(0, 600),
         },
         { status: 502 }
       );
     }
 
-    let report = null;
-
+    let data;
     try {
-      report = JSON.parse(stripCodeFences(rawText));
+      data = JSON.parse(raw);
     } catch {
-      const extracted = extractFirstJson(rawText);
-      if (extracted) {
-        try {
-          report = JSON.parse(extracted);
-        } catch {
-          report = null;
-        }
-      }
-    }
-
-    if (!report) {
-      return NextResponse.json(
-        { error: "Gemini returned invalid JSON.", usedModel, rawModelText: rawText },
+      return Response.json(
+        {
+          ok: false,
+          error: "Gemini returned non-JSON API payload (unexpected).",
+          details: raw?.slice(0, 600),
+        },
         { status: 502 }
       );
     }
 
-    return NextResponse.json({ ok: true, usedModel, report }, { status: 200 });
+    const textOut =
+      data?.candidates?.[0]?.content?.parts?.map((p) => p?.text || "").join("") ||
+      "";
+
+    const cleaned = stripCodeFences(textOut);
+
+    let report;
+    try {
+      report = JSON.parse(cleaned);
+    } catch (e) {
+      return Response.json(
+        {
+          ok: false,
+          error: "Gemini returned invalid JSON.",
+          details: cleaned?.slice(0, 900),
+        },
+        { status: 502 }
+      );
+    }
+
+    // Normalize + compute band
+    const originalScore = clampInt(report?.risk_score, 0, 10);
+    const adjustedScore = applyStructuralDampener(originalScore, tasks);
+    const finalBand = bandFromScore(adjustedScore);
+
+    const resilience_factors = resilienceFactorsFromTasks(tasks);
+
+    const normalized = {
+      risk_score: adjustedScore,
+      risk_band: finalBand,
+      why: Array.isArray(report?.why) ? report.why.slice(0, 6) : [],
+      most_automatable: Array.isArray(report?.most_automatable)
+        ? report.most_automatable.slice(0, 6)
+        : [],
+      most_human_moat: Array.isArray(report?.most_human_moat)
+        ? report.most_human_moat.slice(0, 6)
+        : [],
+      recommendations: Array.isArray(report?.recommendations)
+        ? report.recommendations.slice(0, 10)
+        : [],
+      assumptions: Array.isArray(report?.assumptions) ? report.assumptions.slice(0, 6) : [],
+      resilience_factors,
+      meta: {
+        model,
+        original_score: originalScore,
+        dampener_applied: adjustedScore !== originalScore,
+      },
+    };
+
+    return Response.json(
+      {
+        ok: true,
+        usedModel: model,
+        report: normalized,
+      },
+      { status: 200 }
+    );
   } catch (err) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+    return Response.json(
+      {
+        ok: false,
+        error: "Server error generating report.",
+        details: String(err?.message || err),
+      },
+      { status: 500 }
+    );
   }
+}
+
+export async function GET() {
+  return Response.json({ ok: false, error: "Method not allowed." }, { status: 405 });
 }
