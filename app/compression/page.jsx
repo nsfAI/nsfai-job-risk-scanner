@@ -63,6 +63,20 @@ function formatDelta(n) {
   return `${sign}${n.toFixed(1)}`;
 }
 
+function toneFromScore(score) {
+  if (score >= 75) return "bad";
+  if (score >= 55) return "warn";
+  if (score >= 35) return "neutral";
+  return "good";
+}
+
+function dirLabel(direction) {
+  if (direction === "up") return "Rising";
+  if (direction === "down") return "Falling";
+  if (direction === "flat") return "Flat";
+  return "—";
+}
+
 export default function CompressionPage() {
   const [sector, setSector] = useState("All");
   const [skill, setSkill] = useState("All");
@@ -90,27 +104,34 @@ export default function CompressionPage() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sector, skill, range]);
 
   const latest = data?.latest;
   const series = data?.series || [];
 
-  const tone = (score) => {
-    if (score >= 75) return "bad";
-    if (score >= 55) return "warn";
-    if (score >= 35) return "neutral";
-    return "good";
-  };
+  const signals = latest?.signals || null; // new advanced payload (safe if missing)
+  const thesis = latest?.thesis || "";
+  const scenarios = latest?.scenarios || null;
+  const watchlist = latest?.watchlist || [];
+
+  const scoreTone = toneFromScore(latest?.index ?? 0);
+
+  // Build a deterministic ordering for deep dives
+  const signalCards = useMemo(() => {
+    if (!signals) return [];
+    const order = ["adoption", "jobs", "layoffs"];
+    return order
+      .filter((k) => signals[k])
+      .map((k) => ({ key: k, ...signals[k] }));
+  }, [signals]);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-10">
-
       {/* Header */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Compression Index
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Compression Index</h1>
           <p className="mt-1 text-sm text-black/60">
             Live enterprise signals that correlate with AI-driven labor compression (not just “bad economy” vibes).
           </p>
@@ -122,11 +143,13 @@ export default function CompressionPage() {
             value={sector}
             onChange={(e) => setSector(e.target.value)}
           >
-            {["All", "Tech", "Finance", "Healthcare", "Retail", "Manufacturing", "Energy", "Public Sector", "Other"].map((s) => (
-              <option key={s} value={s}>
-                Sector: {s}
-              </option>
-            ))}
+            {["All", "Tech", "Finance", "Healthcare", "Retail", "Manufacturing", "Energy", "Public Sector", "Other"].map(
+              (s) => (
+                <option key={s} value={s}>
+                  Sector: {s}
+                </option>
+              )
+            )}
           </select>
 
           <select
@@ -198,23 +221,14 @@ export default function CompressionPage() {
         <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.05)]">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-black/70">
-                Compression Index
-              </p>
+              <p className="text-sm font-semibold text-black/70">Compression Index</p>
               <p className="mt-2 text-4xl font-semibold tracking-tight">
                 {loading ? "—" : `${latest?.index ?? "—"}`}
-                <span className="text-lg font-semibold text-black/50">
-                  {" "}
-                  / 100
-                </span>
+                <span className="text-lg font-semibold text-black/50"> / 100</span>
               </p>
               <div className="mt-3 flex items-center gap-2">
-                <Pill tone={tone(latest?.index ?? 0)}>
-                  {latest?.band || "—"}
-                </Pill>
-                <span className="text-xs text-black/60">
-                  Δ {formatDelta(latest?.delta)} (vs prev)
-                </span>
+                <Pill tone={scoreTone}>{latest?.band || "—"}</Pill>
+                <span className="text-xs text-black/60">Δ {formatDelta(latest?.delta)} (vs prev)</span>
               </div>
             </div>
 
@@ -223,25 +237,32 @@ export default function CompressionPage() {
               <p className="mt-1 text-sm font-semibold">
                 {sector} · {skill}
               </p>
-              <p className="mt-1 text-xs text-black/50">
-                Updated: {latest?.asOf || "—"}
-              </p>
+              <p className="mt-1 text-xs text-black/50">Updated: {latest?.asOf || "—"}</p>
             </div>
           </div>
 
           <div className="mt-5">
             <Sparkline points={series.map((d, i) => ({ x: i, y: d.index }))} />
           </div>
+
+          {data?.meta?.mode === "mock" && (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              Using <b>mock</b> data (no data source env vars detected). This is expected until you wire real feeds.
+            </div>
+          )}
         </div>
 
         <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.05)]">
-          <p className="text-sm font-semibold text-black/70">
-            Signal breakdown
-          </p>
+          <p className="text-sm font-semibold text-black/70">Signal breakdown</p>
 
           <div className="mt-4 grid gap-3">
             {[
-              { key: "layoffs", title: "Layoff clustering", desc: "Disproportionate layoffs vs baseline", val: latest?.layoffsScore },
+              {
+                key: "layoffs",
+                title: "Layoff clustering",
+                desc: "Disproportionate layoffs vs baseline",
+                val: latest?.layoffsScore,
+              },
               { key: "jobs", title: "Job posting decline", desc: "Posting velocity vs median baseline", val: latest?.jobsScore },
               { key: "adoption", title: "AI adoption proxy", desc: "AI requirements / tool mentions trend", val: latest?.adoptionScore },
             ].map((s) => (
@@ -251,19 +272,169 @@ export default function CompressionPage() {
                     <p className="text-sm font-semibold">{s.title}</p>
                     <p className="mt-1 text-xs text-black/55">{s.desc}</p>
                   </div>
-                  <Pill tone={tone(s.val ?? 0)}>
-                    {loading ? "—" : `${s.val ?? "—"}`}
-                  </Pill>
+                  <Pill tone={toneFromScore(s.val ?? 0)}>{loading ? "—" : `${s.val ?? "—"}`}</Pill>
                 </div>
               </div>
             ))}
           </div>
 
+          <div className="mt-4 rounded-2xl border border-black/5 bg-zinc-50 p-4 text-sm text-black/70">
+            <b>Interpretation:</b> high score = labor is compressing faster in this sector/skill. It does <i>not</i> mean
+            “job extinct tomorrow.”
+          </div>
+
           {err && (
-            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-              {err}
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{err}</div>
+          )}
+        </div>
+      </div>
+
+      {/* Advanced section (safe if API not updated yet) */}
+      <div className="mt-6 grid gap-4">
+        <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.05)]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-black/70">Analyst Notes</p>
+              <p className="mt-1 text-sm text-black/55">
+                A structured interpretation layer on top of the index (drivers, counter-signals, scenarios).
+              </p>
+            </div>
+
+            <Pill tone={scoreTone}>{loading ? "—" : `Index: ${latest?.index ?? "—"}/100`}</Pill>
+          </div>
+
+          {!thesis ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-black/10 bg-zinc-50 p-4 text-sm text-black/60">
+              No analyst notes yet. (Deploy the updated <code>/api/compression</code> route to enable this layer.)
+            </div>
+          ) : (
+            <div className="mt-4 whitespace-pre-line text-sm leading-relaxed text-black/75">
+              {thesis}
             </div>
           )}
+        </div>
+
+        {/* Deep dives */}
+        <div className="grid gap-4 md:grid-cols-3">
+          {signalCards.map((s) => (
+            <div
+              key={s.key}
+              className="rounded-3xl border border-black/5 bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.05)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">{s.label || s.key}</p>
+                  <p className="mt-1 text-xs text-black/55">
+                    {s.classification ? `${s.classification} signal` : "Signal"}
+                    {" · "}
+                    {typeof s.volatility_21d === "number" ? `Vol (21d): ${s.volatility_21d}` : "Vol (21d): —"}
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <Pill tone={toneFromScore(s.score ?? 0)}>{loading ? "—" : `${s.score ?? "—"}`}</Pill>
+                  <p className="mt-2 text-xs text-black/55">
+                    {dirLabel(s.direction)}{" "}
+                    {typeof s.delta === "number" ? `(${formatDelta(s.delta)})` : "(—)"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-black/5 bg-zinc-50 p-4 text-sm text-black/70">
+                <b>Read:</b> {s.interpretation || "—"}
+              </div>
+
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-black/60">Primary drivers</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-black/75">
+                  {(s.drivers || []).slice(0, 5).map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-black/60">Counter-signals</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-black/70">
+                  {(s.counterSignals || []).slice(0, 4).map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <span className="text-xs text-black/55">Confidence</span>
+                <Pill tone={s.confidence === "High" ? "good" : s.confidence === "Medium" ? "warn" : "neutral"}>
+                  {s.confidence || "—"}
+                </Pill>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Scenarios + Watchlist */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.05)]">
+            <p className="text-sm font-semibold text-black/70">Scenario map</p>
+            <p className="mt-1 text-sm text-black/55">
+              If/then logic to interpret which regime you’re in.
+            </p>
+
+            {!scenarios?.scenarios?.length ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-black/10 bg-zinc-50 p-4 text-sm text-black/60">
+                No scenarios yet. (Deploy updated API to populate.)
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {scenarios.scenarios.map((x, i) => {
+                  const isLikely = scenarios.likelyScenarioIndex === i;
+                  return (
+                    <div
+                      key={i}
+                      className={cx(
+                        "rounded-2xl border p-4",
+                        isLikely ? "border-black/15 bg-zinc-50" : "border-black/5 bg-white"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold">
+                          {x.if}
+                        </p>
+                        {isLikely ? <Pill tone="warn">Likely</Pill> : <Pill>Possible</Pill>}
+                      </div>
+                      <p className="mt-2 text-sm text-black/70">{x.then}</p>
+                      {(x.watch || []).length ? (
+                        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-black/65">
+                          {x.watch.slice(0, 4).map((w, j) => (
+                            <li key={j}>{w}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.05)]">
+            <p className="text-sm font-semibold text-black/70">Watchlist</p>
+            <p className="mt-1 text-sm text-black/55">
+              What to monitor next to confirm or falsify the read.
+            </p>
+
+            {!watchlist?.length ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-black/10 bg-zinc-50 p-4 text-sm text-black/60">
+                No watchlist yet. (Deploy updated API to populate.)
+              </div>
+            ) : (
+              <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-black/75">
+                {watchlist.slice(0, 8).map((x, i) => (
+                  <li key={i}>{x}</li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
     </main>
