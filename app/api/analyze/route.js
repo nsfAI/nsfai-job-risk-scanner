@@ -4,40 +4,41 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
-    const { jobTitle, industry, seniority, description, tasks } = body;
+    const {
+      jobTitle,
+      industry,
+      seniority,
+      description,
+      tasks
+    } = body;
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
+    // ✅ FIXED MODEL (supported + stable)
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        temperature: 0,
-        response_mime_type: "application/json"
-      }
+      model: "gemini-1.5-pro-latest"
     });
 
     const prompt = `
-You are an AI labor economist.
+You are an AI career risk analyst.
 
-Return ONLY valid JSON.
-No markdown.
-No commentary.
-No explanation.
-No extra text.
+Analyze the following role and return STRICT JSON only.
 
-Output format:
+Return this exact JSON structure:
 
 {
   "riskLevel": "Low | Medium | High",
-  "safetyScore": number,
+  "safetyScore": number (0-100),
   "timeHorizon": "1-3 years | 3-5 years | 5+ years",
   "automationExposure": number,
   "augmentationPotential": number,
   "humanMoat": number,
   "accountabilityShield": number,
   "toolchainReplaceability": number,
-  "adoptionSpeed": number,
-  "summary": "short explanation"
+  "adoptionSpeedFactor": number,
+  "summary": "string",
+  "mostAtRiskTasks": ["string"],
+  "mostDefensibleTasks": ["string"]
 }
 
 Job Title: ${jobTitle}
@@ -47,33 +48,29 @@ Seniority: ${seniority}
 Job Description:
 ${description}
 
-Selected Tasks:
+Tasks Selected:
 ${tasks.join(", ")}
 `;
 
     const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
 
-    const text = result.response.text();
+    // Attempt to safely extract JSON
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
 
-    let parsed;
-
-    try {
-      parsed = JSON.parse(text);
-    } catch (err) {
-      return new Response(
-        JSON.stringify({
-          error: "Model returned invalid JSON.",
-          raw: text
-        }),
-        { status: 500 }
-      );
+    if (!jsonMatch) {
+      throw new Error("Model did not return structured JSON.");
     }
 
-    return new Response(JSON.stringify(parsed), { status: 200 });
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    return Response.json(parsed);
 
   } catch (error) {
-    return new Response(
-      JSON.stringify({ error: error.message }),
+    console.error("Analyze Error:", error);
+    return Response.json(
+      { error: error.message || "Something went wrong." },
       { status: 500 }
     );
   }
