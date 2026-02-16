@@ -162,14 +162,12 @@ export default function Page() {
     Reset
   </button>
 </div>
-
-
           </div>
         </div>
       </div>
-
       <main className="mx-auto max-w-6xl px-4 py-10">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+
           {/* Left: Role inputs */}
           <section className="rounded-2xl border border-black/5 bg-white p-6 shadow-[0_1px_0_rgba(0,0,0,0.04),0_10px_30px_rgba(0,0,0,0.06)]">
             <div className="flex items-start justify-between gap-4">
