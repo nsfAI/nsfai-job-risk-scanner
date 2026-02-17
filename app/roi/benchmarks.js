@@ -1,8 +1,8 @@
 // app/roi/benchmarks.js
 // Notes on "accuracy":
-// - Undergrad tuition is NOT "by major" in general — it's driven by school type + residency.
+// - Undergrad tuition is NOT truly "by major" — it's driven by school type + residency.
 // - Majors primarily affect earnings curve + AI exposure assumptions.
-// - Professional programs (MD/JD/MBA) are modeled as their own "school type" options.
+// - Professional programs (MD/JD/MBA) are modeled as separate "tracks" with their own school types.
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -16,13 +16,17 @@ function norm(s) {
 }
 
 /**
- * MAJORS: earnings / growth / AI exposure assumptions.
- * These are "benchmarks" (not promises).
- * Users can still override everything via Advanced manual entry.
+ * Tracks:
+ * - "UG"  : undergrad
+ * - "LAW" : JD
+ * - "MED" : MD/DO
+ * - "MBA" : MBA
  */
 export const MAJORS = [
   {
     key: "Accounting (BS)",
+    track: "UG",
+    yearsInSchoolDefault: 4,
     startSalary: 65000,
     growth: 0.038,
     plateauYear: 18,
@@ -33,6 +37,8 @@ export const MAJORS = [
   },
   {
     key: "Finance (BS)",
+    track: "UG",
+    yearsInSchoolDefault: 4,
     startSalary: 75000,
     growth: 0.040,
     plateauYear: 18,
@@ -43,6 +49,8 @@ export const MAJORS = [
   },
   {
     key: "Computer Science (BS)",
+    track: "UG",
+    yearsInSchoolDefault: 4,
     startSalary: 95000,
     growth: 0.045,
     plateauYear: 16,
@@ -53,6 +61,8 @@ export const MAJORS = [
   },
   {
     key: "Data / Analytics (BS/MS)",
+    track: "UG",
+    yearsInSchoolDefault: 4,
     startSalary: 90000,
     growth: 0.045,
     plateauYear: 16,
@@ -63,6 +73,8 @@ export const MAJORS = [
   },
   {
     key: "Nursing (BSN)",
+    track: "UG",
+    yearsInSchoolDefault: 4,
     startSalary: 82000,
     growth: 0.040,
     plateauYear: 20,
@@ -73,6 +85,8 @@ export const MAJORS = [
   },
   {
     key: "Mechanical Engineering (BS)",
+    track: "UG",
+    yearsInSchoolDefault: 4,
     startSalary: 78000,
     growth: 0.040,
     plateauYear: 18,
@@ -81,8 +95,12 @@ export const MAJORS = [
     notes:
       "Moderate automation. Value remains where constraints meet reality: manufacturing, safety, systems integration.",
   },
+
+  // PROFESSIONAL: LAW
   {
     key: "Law (JD)",
+    track: "LAW",
+    yearsInSchoolDefault: 3,
     startSalary: 95000,
     growth: 0.035,
     plateauYear: 18,
@@ -91,9 +109,13 @@ export const MAJORS = [
     notes:
       "Research/drafting compresses, but liability + client trust protect higher-end work. Brand + practice area matter a lot.",
   },
+
+  // PROFESSIONAL: MED (simple version; your page supports training fields)
   {
     key: "Medicine (MD)",
-    startSalary: 240000,
+    track: "MED",
+    yearsInSchoolDefault: 4,
+    startSalary: 240000, // attending-level benchmark (you handle training if you want)
     growth: 0.030,
     plateauYear: 22,
     plateauGrowth: 0.015,
@@ -101,8 +123,12 @@ export const MAJORS = [
     notes:
       "High liability + embodiment = strong moat. AI accelerates admin/diagnostic assistance; reimbursement/regulation shape outcomes.",
   },
+
+  // PROFESSIONAL: MBA
   {
     key: "MBA (General)",
+    track: "MBA",
+    yearsInSchoolDefault: 2,
     startSalary: 110000,
     growth: 0.035,
     plateauYear: 18,
@@ -111,8 +137,11 @@ export const MAJORS = [
     notes:
       "Depends on role. AI rewards operators who can scope problems, communicate decisions, and execute with leverage.",
   },
+
   {
     key: "Education (BA/BS)",
+    track: "UG",
+    yearsInSchoolDefault: 4,
     startSalary: 52000,
     growth: 0.030,
     plateauYear: 20,
@@ -123,6 +152,8 @@ export const MAJORS = [
   },
   {
     key: "Psychology (BA/BS)",
+    track: "UG",
+    yearsInSchoolDefault: 4,
     startSalary: 50000,
     growth: 0.030,
     plateauYear: 20,
@@ -135,7 +166,6 @@ export const MAJORS = [
 
 /**
  * CITIES: living costs + salary multipliers + rough tax rate.
- * These are coarse, but directionally useful.
  */
 export const CITIES = [
   {
@@ -186,35 +216,31 @@ export const CITIES = [
 ];
 
 /**
- * SCHOOL_TYPES: tuition is driven by program level + institution category.
- * Expanded beyond the old $12k vs $45k binary.
- *
- * IMPORTANT: Undergrad tuition numbers here are *national medians by institution type*.
- * For best accuracy, you'll eventually add "Pick a school" and pull actual tuition.
+ * SCHOOL_TYPES: tuition by institution/program tier.
+ * IMPORTANT: keys here must match your ROI page dropdown.
  */
 export const SCHOOL_TYPES = [
   // UNDERGRAD
-  { key: "Community College (In-district avg)", tuitionPerYear: 4000 },
-  { key: "Public 4-year (In-State avg)", tuitionPerYear: 11250 },
-  { key: "Public 4-year (Out-of-State avg)", tuitionPerYear: 29000 },
-  { key: "Private Nonprofit 4-year (Avg)", tuitionPerYear: 41000 },
-  { key: "Private For-profit 4-year (Avg)", tuitionPerYear: 20000 },
+  { key: "Community College (In-district avg)", tuitionPerYear: 4000, track: "UG" },
+  { key: "Public 4-year (In-State avg)", tuitionPerYear: 11250, track: "UG" },
+  { key: "Public 4-year (Out-of-State avg)", tuitionPerYear: 29000, track: "UG" },
+  { key: "Private Nonprofit 4-year (Avg)", tuitionPerYear: 41000, track: "UG" },
+  { key: "Private For-profit 4-year (Avg)", tuitionPerYear: 20000, track: "UG" },
 
-  // GRAD / PROFESSIONAL (program-level)
-  { key: "MBA (Public program avg)", tuitionPerYear: 35000 },
-  { key: "MBA (Private program avg)", tuitionPerYear: 60000 },
+  // MBA
+  { key: "MBA (Public program avg)", tuitionPerYear: 35000, track: "MBA" },
+  { key: "MBA (Private program avg)", tuitionPerYear: 60000, track: "MBA" },
 
-  { key: "Law School (Public resident avg)", tuitionPerYear: 31500 },
-  { key: "Law School (Public non-resident avg)", tuitionPerYear: 45000 },
-  { key: "Law School (Private avg)", tuitionPerYear: 58000 },
+  // LAW
+  { key: "Law School (Public resident avg)", tuitionPerYear: 31500, track: "LAW" },
+  { key: "Law School (Public non-resident avg)", tuitionPerYear: 45000, track: "LAW" },
+  { key: "Law School (Private avg)", tuitionPerYear: 58000, track: "LAW" },
 
-  { key: "Medical School (Public avg)", tuitionPerYear: 44000 },
-  { key: "Medical School (Private avg)", tuitionPerYear: 66000 },
+  // MED
+  { key: "Medical School (Public avg)", tuitionPerYear: 44000, track: "MED" },
+  { key: "Medical School (Private avg)", tuitionPerYear: 66000, track: "MED" },
 ];
 
-/**
- * LIFESTYLES: multiplies living cost estimates.
- */
 export const LIFESTYLES = [
   { key: "Frugal", livingMult: 0.82 },
   { key: "Normal", livingMult: 1.0 },
@@ -225,7 +251,6 @@ export function pickMajor(majorText, majorBenchmarkKey) {
   const bench = MAJORS.find((m) => m.key === majorBenchmarkKey) || MAJORS[0];
   const t = norm(majorText);
 
-  // Lightweight mapping (so “medical school” doesn’t accidentally become Accounting)
   const rules = [
     { match: ["medical", "med school", "doctor", "physician", "md"], key: "Medicine (MD)" },
     { match: ["law", "jd", "attorney"], key: "Law (JD)" },
@@ -241,9 +266,7 @@ export function pickMajor(majorText, majorBenchmarkKey) {
   ];
 
   const found = rules.find((r) => r.match.some((w) => t.includes(norm(w))));
-  if (found) {
-    return MAJORS.find((m) => m.key === found.key) || bench;
-  }
+  if (found) return MAJORS.find((m) => m.key === found.key) || bench;
 
   return bench;
 }
@@ -260,60 +283,36 @@ export function pickLifestyle(lifestyleKey) {
   return LIFESTYLES.find((l) => l.key === lifestyleKey) || LIFESTYLES[1];
 }
 
-/* ===========================
-   ✅ MISSING EXPORTS (FIX)
-   =========================== */
-
 /**
- * Resolve tuition intelligently when user picks a major + school type.
- * - Undergrad majors: tuition from school type
- * - Professional majors (MD/JD/MBA): enforce program-level tuition even if user picked undergrad school type
- *
- * Supports flexible calling styles:
- *   resolveAutoTuition(majorKey, schoolTypeKey)
- *   resolveAutoTuition({ majorKey, schoolTypeKey })
- *   resolveAutoTuition({ major, schoolType })
+ * ✅ THE FIX:
+ * Forces school type to match the major track.
+ * Example: Major "Law (JD)" can NEVER use "Public 4-year (In-State avg)" tuition.
  */
-export function resolveAutoTuition(a, b) {
-  // Flexible args support
-  const majorKey =
-    typeof a === "string"
-      ? a
-      : a?.majorKey || a?.major?.key || a?.major || "";
+const TRACK_DEFAULT_SCHOOLTYPE = {
+  UG: "Public 4-year (In-State avg)",
+  LAW: "Law School (Public resident avg)",
+  MED: "Medical School (Public avg)",
+  MBA: "MBA (Public program avg)",
+};
 
-  const schoolTypeKey =
-    typeof b === "string"
-      ? b
-      : a?.schoolTypeKey || a?.schoolType?.key || a?.schoolType || "";
+export function resolveAutoTuition(major, selectedSchoolTypeKey) {
+  const track = major?.track || "UG";
 
-  const mk = String(majorKey || "");
-  const sk = String(schoolTypeKey || "");
+  const selected = SCHOOL_TYPES.find((s) => s.key === selectedSchoolTypeKey);
+  const selectedTrack = selected?.track;
 
-  const isMD = mk.includes("(MD)");
-  const isJD = mk.includes("(JD)");
-  const isMBA = mk.includes("MBA");
-
-  // If user selected a private undergrad school type, map to private program tuition for pro degrees.
-  const wantsPrivate =
-    sk.toLowerCase().includes("private");
-
-  if (isMD) {
-    const key = wantsPrivate ? "Medical School (Private avg)" : "Medical School (Public avg)";
-    return pickSchoolType(key).tuitionPerYear;
+  // If user picked a school type that doesn't match the track, override it.
+  if (!selected || selectedTrack !== track) {
+    const correctedKey = TRACK_DEFAULT_SCHOOLTYPE[track] || TRACK_DEFAULT_SCHOOLTYPE.UG;
+    const corrected = SCHOOL_TYPES.find((s) => s.key === correctedKey) || SCHOOL_TYPES[0];
+    return {
+      correctedSchoolTypeKey: corrected.key,
+      tuitionPerYear: corrected.tuitionPerYear,
+    };
   }
 
-  if (isJD) {
-    // If they chose out-of-state public, assume non-resident. Otherwise resident.
-    const nonResident = sk.toLowerCase().includes("out-of-state") || sk.toLowerCase().includes("non-resident");
-    if (wantsPrivate) return pickSchoolType("Law School (Private avg)").tuitionPerYear;
-    return pickSchoolType(nonResident ? "Law School (Public non-resident avg)" : "Law School (Public resident avg)").tuitionPerYear;
-  }
-
-  if (isMBA) {
-    const key = wantsPrivate ? "MBA (Private program avg)" : "MBA (Public program avg)";
-    return pickSchoolType(key).tuitionPerYear;
-  }
-
-  // Default: undergrad tuition determined by selected school type
-  return pickSchoolType(sk || SCHOOL_TYPES[0].key).tuitionPerYear;
+  return {
+    correctedSchoolTypeKey: selected.key,
+    tuitionPerYear: selected.tuitionPerYear,
+  };
 }
