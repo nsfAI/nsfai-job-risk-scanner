@@ -10,7 +10,6 @@ import {
   pickCity,
   pickSchoolType,
   pickLifestyle,
-  resolveAutoTuition,
 } from "./benchmarks";
 
 function cx(...classes) {
@@ -40,8 +39,7 @@ function clamp(n, a, b) {
  * - NPV with discount rate
  * - break-even year
  *
- * Special handling: Medicine (MD/DO) track includes training years at a lower salary
- * before switching to attending salary.
+ * Optional training phase (e.g., residency) supported.
  */
 function runModel({
   yearsInSchool,
@@ -61,7 +59,6 @@ function runModel({
   discountRate,
   aiExposure,
   scenario, // "base" | "compression"
-  // Optional medical-style training phase
   trainingYears = 0,
   trainingSalary = 0,
   attendingStartSalary = null,
@@ -105,12 +102,12 @@ function runModel({
   let salary = startSalary;
 
   for (let y = 1; y <= H; y++) {
-    // If trainingYears exists, we use training salary first, then switch to attending salary
     let gross;
+
+    // Training phase first, then attending salary (if provided)
     if (trainingYears > 0 && y <= trainingYears) {
       gross = trainingSalary;
     } else if (attendingStartSalary !== null && attendingStartSalary !== undefined) {
-      // once training ends, start at attending salary, then grow
       if (y === trainingYears + 1) salary = attendingStartSalary;
       gross = salary;
     } else {
@@ -142,7 +139,6 @@ function runModel({
     npv += pv;
 
     cum += cf;
-
     if (breakEvenYear === null && cum >= 0) breakEvenYear = t + 1;
   }
 
@@ -155,12 +151,75 @@ function runModel({
   };
 }
 
+/**
+ * Local school-type auto-correct:
+ * Undergrad tuition is not “by major”, but professional tracks (MD/JD/MBA) should default to
+ * the correct tuition tier so Easy Mode doesn’t lie.
+ *
+ * This returns a valid SCHOOL_TYPES.key every time.
+ */
+function resolveSchoolTypeKeyForTrack(major, currentSchoolTypeKey) {
+  const track = (major?.track || "").toLowerCase();
+
+  const hasKey = (k) => SCHOOL_TYPES.some((s) => s.key === k);
+  const findFirst = (pred) => (SCHOOL_TYPES.find(pred)?.key ? SCHOOL_TYPES.find(pred).key : null);
+
+  // Helper: keep user’s pick if it’s already a matching professional tier
+  const isMedicalTier = (k) => String(k).toLowerCase().includes("medical school");
+  const isLawTier = (k) => String(k).toLowerCase().includes("law school");
+  const isMbaTier = (k) => String(k).toLowerCase().includes("mba");
+
+  // Default undergrad tier
+  const defaultUG =
+    findFirst((s) => s.key.toLowerCase().includes("public 4-year") && s.key.toLowerCase().includes("in-state")) ||
+    SCHOOL_TYPES[0]?.key;
+
+  if (track.includes("md") || track.includes("medicine") || track.includes("medical")) {
+    if (isMedicalTier(currentSchoolTypeKey)) return currentSchoolTypeKey;
+    // Prefer public avg by default
+    const medPublic = findFirst((s) => s.key.toLowerCase().includes("medical school") && s.key.toLowerCase().includes("public"));
+    const medPrivate = findFirst((s) => s.key.toLowerCase().includes("medical school") && s.key.toLowerCase().includes("private"));
+    return medPublic || medPrivate || currentSchoolTypeKey || defaultUG;
+  }
+
+  if (track.includes("jd") || track.includes("law")) {
+    if (isLawTier(currentSchoolTypeKey)) return currentSchoolTypeKey;
+    const lawPublic = findFirst((s) => s.key.toLowerCase().includes("law school") && s.key.toLowerCase().includes("public"));
+    const lawPrivate = findFirst((s) => s.key.toLowerCase().includes("law school") && s.key.toLowerCase().includes("private"));
+    return lawPublic || lawPrivate || currentSchoolTypeKey || defaultUG;
+  }
+
+  if (track.includes("mba")) {
+    if (isMbaTier(currentSchoolTypeKey)) return currentSchoolTypeKey;
+    const mbaPublic = findFirst((s) => s.key.toLowerCase().includes("mba") && s.key.toLowerCase().includes("public"));
+    const mbaPrivate = findFirst((s) => s.key.toLowerCase().includes("mba") && s.key.toLowerCase().includes("private"));
+    return mbaPublic || mbaPrivate || currentSchoolTypeKey || defaultUG;
+  }
+
+  // Default = UG track
+  // If user picked a professional tier while in UG track, snap back to UG.
+  if (isMedicalTier(currentSchoolTypeKey) || isLawTier(currentSchoolTypeKey) || isMbaTier(currentSchoolTypeKey)) {
+    return defaultUG;
+  }
+
+  // Otherwise keep current if valid; else fallback
+  if (hasKey(currentSchoolTypeKey)) return currentSchoolTypeKey;
+  return defaultUG;
+}
+
 export default function ROIPage() {
   // Easy Mode selections
   const [majorText, setMajorText] = useState("Accounting");
   const [majorBenchmark, setMajorBenchmark] = useState("Accounting (BS)");
   const [cityKey, setCityKey] = useState("New York, NY");
-  const [schoolType, setSchoolType] = useState("In-State Public (UG)");
+
+  // IMPORTANT: initialize to a REAL key from SCHOOL_TYPES to prevent blank tuition
+  const defaultSchoolTypeKey =
+    SCHOOL_TYPES.find((s) => s.key.toLowerCase().includes("public 4-year") && s.key.toLowerCase().includes("in-state"))?.key ||
+    SCHOOL_TYPES[0]?.key ||
+    "Public 4-year (In-State avg)";
+
+  const [schoolType, setSchoolType] = useState(defaultSchoolTypeKey);
   const [lifestyle, setLifestyle] = useState("Normal");
 
   // Advanced toggle
@@ -191,59 +250,68 @@ export default function ROIPage() {
     const city = pickCity(cityKey);
     const lifestyleObj = pickLifestyle(lifestyle);
 
-    // Tuition: automatically select correct tier for major (UG vs Professional)
-    const tuitionResolved = resolveAutoTuition(major, schoolType);
-    const tuition = tuitionResolved.tuitionPerYear;
+    // ✅ auto-correct school type key by major track (UG vs MD/JD/MBA)
+    const correctedSchoolTypeKey = resolveSchoolTypeKeyForTrack(major, schoolType);
+    const schoolObj = pickSchoolType(correctedSchoolTypeKey);
 
-    const livingSchoolAuto = Math.round(city.livingSchool * lifestyleObj.livingMult);
-    const livingAfterAuto = Math.round(city.livingAfter * lifestyleObj.livingMult);
+    // ✅ tuition ALWAYS comes from a valid school object
+    const tuition = Number(schoolObj?.tuitionPerYear ?? 0);
 
-    // Salary: professional MD/DO uses attendingStartSalary (post-training) and training salary
-    const baseStart =
-      major.attendingStartSalary != null ? major.attendingStartSalary : major.startSalary;
+    const livingSchoolAuto = Math.round(Number(city.livingSchool) * lifestyleObj.livingMult);
+    const livingAfterAuto = Math.round(Number(city.livingAfter) * lifestyleObj.livingMult);
 
-    const startSalaryAuto = Math.round(baseStart * city.salaryMult);
+    // Salary handling:
+    // If benchmark supports training/attending, model training first then attending.
+    const trainingYears = Number(major?.trainingYears ?? 0);
+    const trainingSalaryBase = Number(major?.trainingSalary ?? 0);
+    const attendingBase = major?.attendingStartSalary != null ? Number(major.attendingStartSalary) : null;
 
-    // For med, training salary should also be city-adjusted (small effect)
-    const trainingSalaryAuto =
-      major.trainingSalary != null ? Math.round(major.trainingSalary * (city.salaryMult * 0.95)) : 0;
+    const attendingStartSalaryAuto = attendingBase != null ? Math.round(attendingBase * city.salaryMult) : null;
+    const trainingSalaryAuto = trainingSalaryBase > 0 ? Math.round(trainingSalaryBase * (city.salaryMult * 0.95)) : 0;
+
+    // Normal majors use startSalary
+    const baseStart = Math.round(Number(major?.startSalary ?? 0) * city.salaryMult);
+
+    const yearsInSchoolDefault = Number(major?.yearsInSchoolDefault ?? 4);
 
     return {
       major,
       city,
       lifestyle: lifestyleObj,
       auto: {
-        schoolTypeCorrected: tuitionResolved.correctedSchoolTypeKey,
+        correctedSchoolTypeKey,
         tuitionPerYear: tuition,
         livingSchool: livingSchoolAuto,
         livingAfterGrad: livingAfterAuto,
-        // If major has attending salary, we store both:
-        attendingStartSalary: major.attendingStartSalary != null ? startSalaryAuto : null,
-        trainingSalary: trainingSalaryAuto,
-        trainingYears: major.trainingYears || 0,
 
-        startSalary: major.attendingStartSalary != null ? trainingSalaryAuto : startSalaryAuto, // start at training if med
-        salaryGrowth: major.growth,
-        plateauYear: major.plateauYear,
-        plateauGrowth: major.plateauGrowth,
-        taxRate: city.taxRate,
-        aiExposure: major.aiExposure,
-        yearsInSchool: major.yearsInSchoolDefault,
+        trainingYears,
+        trainingSalary: trainingSalaryAuto,
+        attendingStartSalary: attendingStartSalaryAuto,
+
+        // if training exists, startSalary is training; else normal start
+        startSalary: trainingYears > 0 ? trainingSalaryAuto : baseStart,
+
+        salaryGrowth: Number(major?.growth ?? 0.04),
+        plateauYear: Number(major?.plateauYear ?? 18),
+        plateauGrowth: Number(major?.plateauGrowth ?? 0.018),
+        taxRate: Number(city?.taxRate ?? 0.25),
+        aiExposure: Number(major?.aiExposure ?? 5),
+        yearsInSchool: yearsInSchoolDefault,
       },
       warnings: {
-        correctedSchoolType: tuitionResolved.correctedSchoolTypeKey !== schoolType,
-        majorTrack: major.track,
+        correctedSchoolType: correctedSchoolTypeKey !== schoolType,
+        majorTrack: major?.track ?? "UG",
       },
     };
   }, [majorText, majorBenchmark, cityKey, schoolType, lifestyle]);
 
   // If we auto-corrected schoolType tier, update UI so user sees the truth.
   useEffect(() => {
-    if (derived?.auto?.schoolTypeCorrected && derived.auto.schoolTypeCorrected !== schoolType) {
-      setSchoolType(derived.auto.schoolTypeCorrected);
+    if (derived?.auto?.correctedSchoolTypeKey && derived.auto.correctedSchoolTypeKey !== schoolType) {
+      setSchoolType(derived.auto.correctedSchoolTypeKey);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [derived?.auto?.schoolTypeCorrected]);
+  }, [derived?.auto?.correctedSchoolTypeKey]);
 
   const modelInputs = useMemo(() => {
     if (showAdvanced) {
@@ -258,14 +326,13 @@ export default function ROIPage() {
         repayYears: Number(repayYears),
         startSalary: Number(startSalary),
         salaryGrowth: Number(salaryGrowth),
-        plateauYear: derived.major.plateauYear,
-        plateauGrowth: derived.major.plateauGrowth,
+        plateauYear: derived.auto.plateauYear,
+        plateauGrowth: derived.auto.plateauGrowth,
         taxRate: Number(taxRate),
         livingAfterGrad: Number(livingAfterGrad),
         discountRate: Number(discountRate),
         aiExposure: Number(aiExposure),
 
-        // If user chooses major that includes training, include it even in advanced mode unless they override via inputs
         trainingYears: derived.auto.trainingYears || 0,
         trainingSalary: derived.auto.trainingSalary || 0,
         attendingStartSalary: derived.auto.attendingStartSalary,
@@ -280,8 +347,7 @@ export default function ROIPage() {
       livingSchool: derived.auto.livingSchool,
       scholarshipPerYear: 0,
 
-      // IMPORTANT: default debt = 0 in easy mode (prevents fake precision).
-      // Users can model debt in Advanced mode.
+      // default debt = 0 in easy mode
       debtPrincipal: 0,
       debtApr: 0.065,
       repayYears: 10,
@@ -527,7 +593,7 @@ export default function ROIPage() {
             <div className="mt-4 text-xs text-black/55">
               Loaded benchmark: <b>{derived.major.key}</b> — start salary{" "}
               <b>
-                {derived.major.attendingStartSalary != null
+                {derived.auto.trainingYears > 0
                   ? `${money(derived.auto.trainingSalary)} (training) → ${money(derived.auto.attendingStartSalary)} (attending)`
                   : money(derived.auto.startSalary)}
               </b>
@@ -623,7 +689,7 @@ export default function ROIPage() {
               </div>
 
               <div className="mt-4 rounded-2xl border border-black/5 bg-zinc-50 p-4">
-                <div className="text-sm font-semibold">200 IQ analysis</div>
+                <div className="text-sm font-semibold">NSFAI ROI Analysis</div>
                 <div className="mt-1 text-xs text-black/55">
                   Mechanistic interpretation (not vibes): fragility, slope, compression sensitivity, payoff structure.
                 </div>
@@ -639,7 +705,7 @@ export default function ROIPage() {
                 <div className="text-xs font-semibold text-black/70">Model inputs used (this run)</div>
                 <div className="mt-3 grid gap-2 text-xs text-black/60 md:grid-cols-2">
                   <div>Major: <b>{derived.major.key}</b></div>
-                  <div>Track: <b>{derived.major.track}</b></div>
+                  <div>Track: <b>{derived.major.track ?? "UG"}</b></div>
                   <div>Tuition/yr: <b>{money(modelInputs.tuitionPerYear)}</b></div>
                   <div>Years in school: <b>{modelInputs.yearsInSchool}</b></div>
                   <div>Start salary: <b>{money(modelInputs.startSalary)}</b></div>
