@@ -136,7 +136,7 @@ export default function Page() {
             <img
   src="/nsfAI-logo.png"
   alt="nsfAI"
-  className="h-9 w-9 rounded-lg object-contain"
+  className="h-16 w-16 rounded-xl object-contain"
 />
             <div className="leading-tight">
               <div className="text-sm font-semibold tracking-tight">nsfAI</div>
