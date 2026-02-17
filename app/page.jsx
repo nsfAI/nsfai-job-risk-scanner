@@ -134,10 +134,10 @@ export default function Page() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <img
-  src="/nsfAI-logo.png"
-  alt="nsfAI"
-  className="h-16 w-16 rounded-xl object-contain"
-/>
+              src="/nsfAI-logo.png"
+              alt="nsfAI"
+              className="h-16 w-16 rounded-xl object-contain"
+            />
             <div className="leading-tight">
               <div className="text-sm font-semibold tracking-tight">nsfAI</div>
               <div className="text-xs text-neutral-500">
@@ -161,12 +161,19 @@ export default function Page() {
               Compression Index
             </a>
 
-            {/* ROI (new) */}
             <a
               href="/roi"
               className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm shadow-sm hover:bg-neutral-50"
             >
               ROI Model
+            </a>
+
+            {/* ✅ NEW: Jobs */}
+            <a
+              href="/jobs"
+              className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm shadow-sm hover:bg-neutral-50"
+            >
+              AI Job Finder
             </a>
 
             <button
@@ -328,7 +335,6 @@ export default function Page() {
             </div>
           </div>
 
-          {/* Clear disclaimer */}
           <div className="mt-3 text-sm text-neutral-600">
             <span className="font-medium text-neutral-900">Important:</span>{" "}
             This score reflects{" "}
@@ -347,7 +353,6 @@ export default function Page() {
             </div>
           ) : (
             <>
-              {/* Score row */}
               <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="rounded-2xl border border-black/5 bg-white p-4">
                   <div className="text-xs text-neutral-500">Score</div>
@@ -372,9 +377,7 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Two columns */}
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                {/* Automatable */}
                 <div className="rounded-2xl border border-black/5 bg-white p-4">
                   <div className="text-sm font-semibold">Most automatable</div>
                   <div className="mt-1 text-sm text-neutral-500">Tasks AI can help automate first.</div>
@@ -394,7 +397,6 @@ export default function Page() {
                   </div>
                 </div>
 
-                {/* Human moat */}
                 <div className="rounded-2xl border border-black/5 bg-white p-4">
                   <div className="text-sm font-semibold">Human moat</div>
                   <div className="mt-1 text-sm text-neutral-500">
@@ -430,7 +432,6 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Recommendations + Assumptions */}
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-black/5 bg-white p-4">
                   <div className="text-sm font-semibold">What to do next</div>

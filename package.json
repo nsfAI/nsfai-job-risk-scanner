@@ -10,6 +10,7 @@
   "dependencies": {
     "@google/genai": "^1.41.0",
     "@google/generative-ai": "^0.24.1",
+    "@opensearch-project/opensearch": "^3.5.1",
     "next": "15.1.11",
     "react": "19.0.0",
     "react-dom": "19.0.0",
