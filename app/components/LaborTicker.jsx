@@ -24,7 +24,7 @@ export default function LaborTicker() {
     }
 
     load();
-    const id = setInterval(load, 1000 * 60 * 10); // refresh every 10 min
+    const id = setInterval(load, 1000 * 60 * 3); // refresh every 3 min
     return () => {
       alive = false;
       clearInterval(id);

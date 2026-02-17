@@ -21,6 +21,12 @@ function normalizeTitle(t) {
     .trim();
 }
 
+function addCacheBust(url) {
+  const u = new URL(url);
+  u.searchParams.set("_cb", String(Date.now()));
+  return u.toString();
+}
+
 // -------------------- BLS: U-3 Unemployment Rate (LNS14000000) --------------------
 async function fetchUnemploymentRate() {
   const now = new Date();
@@ -35,6 +41,7 @@ async function fetchUnemploymentRate() {
       startyear: String(startYear),
       endyear: String(endYear),
     }),
+    // BLS is stable monthly — caching is fine
     cache: "force-cache",
   });
 
@@ -76,11 +83,13 @@ function parseRssOrAtom(xml, { sourceLabel }) {
     const l = safeText(link);
     if (!t || !l) continue;
 
+    const ts = parseDate(pubDate);
+
     items.push({
       title: t,
       link: l,
       pubDate: safeText(pubDate),
-      ts: parseDate(pubDate),
+      ts,
       source: sourceLabel,
     });
   }
@@ -106,11 +115,13 @@ function parseRssOrAtom(xml, { sourceLabel }) {
       const l = safeText(link);
       if (!t || !l) continue;
 
+      const ts = parseDate(pubDate);
+
       items.push({
         title: t,
         link: l,
         pubDate: safeText(pubDate),
-        ts: parseDate(pubDate),
+        ts,
         source: sourceLabel,
       });
     }
@@ -120,44 +131,63 @@ function parseRssOrAtom(xml, { sourceLabel }) {
 }
 
 async function fetchFeed(url, sourceLabel) {
-  const res = await fetch(url, {
+  // cache-bust to avoid stale “stuck yesterday” behavior
+  const busted = addCacheBust(url);
+
+  const res = await fetch(busted, {
     cache: "no-store",
     headers: {
-      // a light UA helps some feeds that block default fetch
-      "User-Agent": "nsfAI-labor-ticker/1.0 (+https://your-site-domain)",
+      "User-Agent": "nsfAI-labor-ticker/1.0 (+https://nsf-ai.com)",
       Accept: "application/rss+xml, application/atom+xml, text/xml, application/xml;q=0.9,*/*;q=0.8",
     },
   });
+
   if (!res.ok) throw new Error(`Feed failed ${res.status} for ${sourceLabel}`);
+
   const xml = await res.text();
   return parseRssOrAtom(xml, { sourceLabel });
 }
 
 // -------------------- Layoff headlines (multi-source) --------------------
 async function fetchLayoffHeadlines() {
-  // ✅ Add/Remove sources here.
-  // Keep it mostly RSS/Atom to avoid scraping bans.
+  // Keep mostly RSS/Atom to avoid scraping bans.
+  // Google News is used as a “flood” aggregator; add topical queries for volume.
   const FEEDS = [
-    // Layoffs.fyi (your existing priority)
     { label: "Layoffs.fyi", url: "https://layoffs.fyi/feed/" },
 
-    // Google News RSS query (very “flooded”)
-    // You can tweak queries to get different vibes
+    // Google News — recency filters via when:Xd
     {
       label: "Google News",
-      url: "https://news.google.com/rss/search?q=layoffs+OR+laid+off+OR+job+cuts+when:7d&hl=en-US&gl=US&ceid=US:en",
+      url: "https://news.google.com/rss/search?q=layoffs+OR+%22job+cuts%22+OR+%22laid+off%22+when:7d&hl=en-US&gl=US&ceid=US:en",
     },
     {
       label: "Google News (Tech)",
-      url: "https://news.google.com/rss/search?q=tech+layoffs+OR+startup+layoffs+when:14d&hl=en-US&gl=US&ceid=US:en",
+      url: "https://news.google.com/rss/search?q=tech+layoffs+OR+startup+layoffs+OR+%22company+cuts%22+when:14d&hl=en-US&gl=US&ceid=US:en",
     },
     {
-      label: "Google News (Banking)",
-      url: "https://news.google.com/rss/search?q=bank+layoffs+OR+finance+job+cuts+when:14d&hl=en-US&gl=US&ceid=US:en",
+      label: "Google News (Finance)",
+      url: "https://news.google.com/rss/search?q=bank+layoffs+OR+finance+job+cuts+OR+wall+street+layoffs+when:14d&hl=en-US&gl=US&ceid=US:en",
+    },
+    {
+      label: "Google News (Retail)",
+      url: "https://news.google.com/rss/search?q=retail+layoffs+OR+store+closures+job+cuts+when:14d&hl=en-US&gl=US&ceid=US:en",
+    },
+
+    // “Curated” outlets via Google query (keeps it RSS-based but higher signal)
+    {
+      label: "Google (TechCrunch)",
+      url: "https://news.google.com/rss/search?q=site:techcrunch.com+layoffs+when:30d&hl=en-US&gl=US&ceid=US:en",
+    },
+    {
+      label: "Google (Business Insider)",
+      url: "https://news.google.com/rss/search?q=site:businessinsider.com+layoffs+when:30d&hl=en-US&gl=US&ceid=US:en",
+    },
+    {
+      label: "Google (CNBC)",
+      url: "https://news.google.com/rss/search?q=site:cnbc.com+layoffs+when:30d&hl=en-US&gl=US&ceid=US:en",
     },
   ];
 
-  // Pull all feeds in parallel (and don’t die if one fails)
   const results = await Promise.allSettled(FEEDS.map((f) => fetchFeed(f.url, f.label)));
 
   let merged = [];
@@ -165,24 +195,47 @@ async function fetchLayoffHeadlines() {
     if (r.status === "fulfilled") merged = merged.concat(r.value);
   }
 
-  // If everything failed, return empty list (front-end shows “loading”)
   if (!merged.length) return { items: [] };
 
-  // Dedupe by normalized title (helps remove repeats across sources)
-  const seen = new Set();
+  // ---- Freshness filter ----
+  // Drop ancient items. You can tighten this to 14d if you want it *very* live.
+  const MAX_AGE_DAYS = 30;
+  const now = Date.now();
+  const cutoff = now - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+
+  merged = merged.filter((it) => {
+    // keep items with a real timestamp and within window
+    // if ts is missing (0), we keep it but it will sort lower
+    if (!it.ts) return true;
+    return it.ts >= cutoff;
+  });
+
+  // ---- Dedupe strategy ----
+  // 1) Dedupe by link first (best)
+  // 2) Then by normalized title (helps remove repeats across sources)
+  const seenLink = new Set();
+  const seenTitle = new Set();
   const deduped = [];
+
   for (const it of merged) {
-    const key = normalizeTitle(it.title);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
+    const linkKey = safeText(it.link).split("#")[0];
+    if (linkKey && seenLink.has(linkKey)) continue;
+
+    const titleKey = normalizeTitle(it.title);
+    // only title-dedupe if we already have link-dedupe failovers
+    if (titleKey && seenTitle.has(titleKey)) continue;
+
+    if (linkKey) seenLink.add(linkKey);
+    if (titleKey) seenTitle.add(titleKey);
+
     deduped.push(it);
   }
 
-  // Sort newest first (fallback ts=0 puts unknown dates at bottom)
+  // Sort newest first; ts=0 goes to bottom
   deduped.sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
-  // Limit to keep payload light
-  const items = deduped.slice(0, 16).map(({ ts, ...rest }) => rest);
+  // Keep payload light
+  const items = deduped.slice(0, 24).map(({ ts, ...rest }) => rest);
 
   return { items };
 }
