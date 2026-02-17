@@ -259,3 +259,61 @@ export function pickSchoolType(schoolTypeKey) {
 export function pickLifestyle(lifestyleKey) {
   return LIFESTYLES.find((l) => l.key === lifestyleKey) || LIFESTYLES[1];
 }
+
+/* ===========================
+   ✅ MISSING EXPORTS (FIX)
+   =========================== */
+
+/**
+ * Resolve tuition intelligently when user picks a major + school type.
+ * - Undergrad majors: tuition from school type
+ * - Professional majors (MD/JD/MBA): enforce program-level tuition even if user picked undergrad school type
+ *
+ * Supports flexible calling styles:
+ *   resolveAutoTuition(majorKey, schoolTypeKey)
+ *   resolveAutoTuition({ majorKey, schoolTypeKey })
+ *   resolveAutoTuition({ major, schoolType })
+ */
+export function resolveAutoTuition(a, b) {
+  // Flexible args support
+  const majorKey =
+    typeof a === "string"
+      ? a
+      : a?.majorKey || a?.major?.key || a?.major || "";
+
+  const schoolTypeKey =
+    typeof b === "string"
+      ? b
+      : a?.schoolTypeKey || a?.schoolType?.key || a?.schoolType || "";
+
+  const mk = String(majorKey || "");
+  const sk = String(schoolTypeKey || "");
+
+  const isMD = mk.includes("(MD)");
+  const isJD = mk.includes("(JD)");
+  const isMBA = mk.includes("MBA");
+
+  // If user selected a private undergrad school type, map to private program tuition for pro degrees.
+  const wantsPrivate =
+    sk.toLowerCase().includes("private");
+
+  if (isMD) {
+    const key = wantsPrivate ? "Medical School (Private avg)" : "Medical School (Public avg)";
+    return pickSchoolType(key).tuitionPerYear;
+  }
+
+  if (isJD) {
+    // If they chose out-of-state public, assume non-resident. Otherwise resident.
+    const nonResident = sk.toLowerCase().includes("out-of-state") || sk.toLowerCase().includes("non-resident");
+    if (wantsPrivate) return pickSchoolType("Law School (Private avg)").tuitionPerYear;
+    return pickSchoolType(nonResident ? "Law School (Public non-resident avg)" : "Law School (Public resident avg)").tuitionPerYear;
+  }
+
+  if (isMBA) {
+    const key = wantsPrivate ? "MBA (Private program avg)" : "MBA (Public program avg)";
+    return pickSchoolType(key).tuitionPerYear;
+  }
+
+  // Default: undergrad tuition determined by selected school type
+  return pickSchoolType(sk || SCHOOL_TYPES[0].key).tuitionPerYear;
+}
