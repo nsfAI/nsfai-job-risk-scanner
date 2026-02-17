@@ -1,135 +1,143 @@
 // app/api/jobs/seed/route.js
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-
 import client from "../../../../lib/opensearch";
+import { scoreResilience } from "../../../jobs/jobScoring";
+
+export const dynamic = "force-dynamic";
 
 const INDEX = "jobs_v1";
-const SCORE_VERSION = "seed_v1";
 
-function pick(arr, i) {
-  return arr[i % arr.length];
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
+function randInt(a, b) {
+  return Math.floor(a + Math.random() * (b - a + 1));
 }
 
 function makeJob(i) {
   const titles = [
-    "Accountant", "Staff Accountant", "Senior Accountant", "Tax Associate", "Audit Associate",
-    "Financial Analyst", "FP&A Analyst", "Treasury Analyst", "Credit Analyst", "Underwriter",
-    "Software Engineer", "Backend Engineer", "Frontend Engineer", "Full Stack Engineer", "DevOps Engineer", "SRE",
-    "Data Analyst", "Business Analyst", "Operations Analyst",
-    "Registered Nurse (RN)", "Licensed Practical Nurse (LPN)", "Nurse Practitioner",
-    "Teacher", "Elementary Teacher", "Special Education Teacher",
-    "Electrician", "Plumber", "HVAC Technician", "Welder", "Mechanic",
-    "Dentist", "Dental Hygienist", "Pharmacist", "Pharmacy Technician",
-    "Real Estate Agent", "Property Manager", "Leasing Specialist",
-    "Project Manager", "Product Manager", "Customer Success Manager", "Sales Representative",
-    "Paralegal", "Legal Assistant",
+    "Financial Analyst",
+    "Accountant",
+    "Registered Nurse",
+    "Teacher",
+    "Software Engineer",
+    "Electrician",
+    "Pharmacist",
+    "Dentist",
+    "Real Estate Agent",
+    "Bank Teller",
+    "Data Analyst",
+    "Operations Manager",
+    "Sales Representative",
+    "Customer Support Specialist",
+    "Project Manager",
+    "Marketing Manager",
+    "Mechanical Technician",
+    "Clinical Lab Technician",
   ];
 
-  const companies = [
-    "Northbridge", "BluePeak", "CedarWorks", "Atlas Group", "NovaHealth", "Sunrise Schools",
-    "Fairview Partners", "Ironclad Electric", "Pioneer Plumbing", "Crown Dental", "City Pharmacy",
-    "Keystone Realty", "HarborTech", "Summit Bank", "Orchid Labs",
-  ];
+  const companies = ["Atlas Group", "Crown Dental", "HarborTech", "NorthBridge", "Cedar Health", "Sunrise Labs"];
+  const locations = ["New York, NY", "Austin, TX", "Denver, CO", "San Jose, CA", "Miami, FL", "Chicago, IL"];
 
-  const locations = [
-    "New York, NY", "Los Angeles, CA", "Chicago, IL", "Dallas, TX", "Miami, FL",
-    "Seattle, WA", "Austin, TX", "Denver, CO", "Atlanta, GA", "Boston, MA",
-    "Phoenix, AZ", "San Diego, CA", "Philadelphia, PA", "San Jose, CA",
-  ];
+  const title = pick(titles);
+  const company = pick(companies);
+  const location = pick(locations);
 
-  const reasons = [
-    "High Human Constraint Density",
-    "AI-Augmented Role",
-    "Elevated Automation Exposure",
-    "Regulatory/Compliance Moat",
-    "Physical Presence Required",
-    "Revenue-Proximate Work",
-  ];
+  const description = `Role: ${title}. Company: ${company}. Location: ${location}.
+Responsibilities include analysis, coordination, documentation, tools usage, stakeholder communication, and hands-on execution depending on role.`;
 
-  const title = pick(titles, i);
-  const company = pick(companies, i * 3);
-  const location = pick(locations, i * 7);
+  // simple deterministic-ish attributes from title
+  const lower = title.toLowerCase();
+  const attrs = {
+    embodiment: /nurse|dentist|electrician|technician|lab/.test(lower) ? 0.8 : 0.25,
+    liability: /nurse|dentist|pharmacist|accountant/.test(lower) ? 0.65 : 0.3,
+    regulatory: /nurse|dentist|pharmacist|accountant/.test(lower) ? 0.65 : 0.25,
+    autonomy: /manager|project/.test(lower) ? 0.65 : 0.35,
+    revenueProximity: /sales|real estate/.test(lower) ? 0.7 : 0.35,
+    trustDepth: /manager|nurse|dentist|pharmacist/.test(lower) ? 0.6 : 0.3,
+    repeatability: /support|analyst|accountant/.test(lower) ? 0.65 : 0.35,
+    toolAutomation: /engineer|analyst|accountant|manager/.test(lower) ? 0.55 : 0.3,
+  };
 
-  // heuristic-ish scoring
-  const isPhysical = /Electrician|Plumber|HVAC|Welder|Mechanic|Dental|Dentist/i.test(title);
-  const isCare = /Nurse|Hygienist|Pharmac/i.test(title);
-  const isSW = /Engineer|DevOps|SRE|Software|Backend|Frontend|Full Stack/i.test(title);
-  const isAcct = /Account|Audit|Tax/i.test(title);
-
-  let resilience = 55;
-  if (isPhysical) resilience += 25;
-  if (isCare) resilience += 18;
-  if (isSW) resilience -= 10;
-  if (isAcct) resilience -= 6;
-
-  // slight variation
-  resilience = clamp(Math.round(resilience + ((i % 9) - 4)), 5, 95);
-
-  const compression_stability = clamp((0.35 + (resilience / 140) + ((i % 11) / 50)), 0, 1);
-  const employer_ai_risk = clamp((0.65 - (resilience / 160) + ((i % 13) / 60)), 0, 1);
-
-  const description = [
-    `Role: ${title}.`,
-    `You will own core workflows, collaborate cross-functionally, and deliver measurable outcomes.`,
-    `Day-to-day includes analysis, execution, communication, and operational follow-through.`,
-    `Tools vary by role; autonomy and responsibility scale with performance.`,
-  ].join(" ");
-
-  // make URL unique + deterministic
-  const url = `https://example.com/jobs/${encodeURIComponent(company.toLowerCase())}/${i}`;
-
-  // posted dates spread over last ~30 days
-  const now = Date.now();
-  const ts = new Date(now - (i % 30) * 24 * 60 * 60 * 1000).toISOString();
+  const scored = scoreResilience(attrs);
 
   return {
+    id: `seed_${i}_${Date.now()}`,
     title,
     company,
     location,
     description,
-    url,
-    posted_ts: ts,
-    resilience_score: resilience,
-    resilience_reason: pick(reasons, i * 5),
-    score_version: SCORE_VERSION,
-    compression_stability: Number(compression_stability.toFixed(2)),
-    employer_ai_risk: Number(employer_ai_risk.toFixed(2)),
+    url: "",
+
+    posted_ts: Date.now() - randInt(0, 1000 * 60 * 60 * 24 * 30),
+
+    attributes_v1: attrs,
+    resilience_score: scored.score,
+    resilience_reason: scored.reason,
+    score_version: scored.scoreVersion,
+
+    compression_stability: 0.7,
+    employer_ai_risk: 0.4,
   };
 }
 
-export async function GET(request) {
+async function ensureIndex() {
+  // Works across client return shapes
+  const existsResp = await client.indices.exists({ index: INDEX });
+  const exists = existsResp?.body ?? existsResp;
+
+  if (exists) return;
+
+  await client.indices.create({
+    index: INDEX,
+    body: {
+      settings: { index: { number_of_shards: 1, number_of_replicas: 0 } },
+      mappings: {
+        properties: {
+          id: { type: "keyword" },
+          title: { type: "text" },
+          company: { type: "text" },
+          location: { type: "text" },
+          description: { type: "text" },
+          url: { type: "keyword" },
+          posted_ts: { type: "date" },
+          resilience_score: { type: "integer" },
+          resilience_reason: { type: "keyword" },
+          score_version: { type: "keyword" },
+          compression_stability: { type: "float" },
+          employer_ai_risk: { type: "float" },
+        },
+      },
+    },
+  });
+}
+
+export async function GET(req) {
   try {
-    const { searchParams } = new URL(request.url);
-    const n = clamp(Number(searchParams.get("n") || 5000), 1, 20000);
+    const { searchParams } = new URL(req.url);
+    const n = Math.min(Number(searchParams.get("n") || 5000), 10000);
 
-    // build bulk payload
-    const lines = [];
-    for (let i = 0; i < n; i++) {
-      lines.push(JSON.stringify({ index: { _index: INDEX } }));
-      lines.push(JSON.stringify(makeJob(i)));
+    await ensureIndex();
+
+    const docs = Array.from({ length: n }, (_, i) => makeJob(i + 1));
+
+    const body = [];
+    for (const d of docs) {
+      body.push({ index: { _index: INDEX, _id: d.id } });
+      body.push(d);
     }
-    const body = lines.join("\n") + "\n";
 
-    const resp = await client.bulk({ body });
-
-    // bulk response differs between clients; expose minimal success info
-    const rBody = resp?.body || resp;
-    const errors = !!rBody?.errors;
+    const bulkResp = await client.bulk({ body, refresh: true });
+    const out = bulkResp?.body || bulkResp;
 
     return Response.json({
       ok: true,
       indexed: n,
-      errors,
-      note: "Seeded jobs_v1. Re-run anytime; it will add more docs.",
+      errors: Boolean(out?.errors),
     });
-  } catch (err) {
+  } catch (e) {
     return Response.json(
-      { ok: false, error: err?.message || "Seed failed" },
+      { ok: false, error: e?.message || "Unknown error" },
       { status: 200 }
     );
   }
